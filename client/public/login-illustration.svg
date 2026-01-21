@@ -1,0 +1,64 @@
+<svg width="600" height="600" viewBox="0 0 600 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="cardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.95" />
+      <stop offset="100%" style="stop-color:#f0f9ff;stop-opacity:0.95" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="600" height="600" fill="url(#bgGradient)"/>
+  
+  <!-- Building/Structure illustration -->
+  <g transform="translate(100, 150)">
+    <!-- Main building -->
+    <rect x="150" y="100" width="200" height="250" rx="8" fill="url(#cardGradient)" stroke="#1e40af" stroke-width="3"/>
+    
+    <!-- Windows -->
+    <rect x="170" y="130" width="50" height="50" rx="4" fill="#3b82f6" opacity="0.3"/>
+    <rect x="240" y="130" width="50" height="50" rx="4" fill="#3b82f6" opacity="0.3"/>
+    <rect x="310" y="130" width="50" height="50" rx="4" fill="#3b82f6" opacity="0.3"/>
+    
+    <rect x="170" y="200" width="50" height="50" rx="4" fill="#3b82f6" opacity="0.3"/>
+    <rect x="240" y="200" width="50" height="50" rx="4" fill="#3b82f6" opacity="0.3"/>
+    <rect x="310" y="200" width="50" height="50" rx="4" fill="#3b82f6" opacity="0.3"/>
+    
+    <!-- Door -->
+    <rect x="225" y="280" width="50" height="70" rx="4" fill="#1e40af" opacity="0.5"/>
+    <circle cx="270" cy="315" r="3" fill="#ffffff"/>
+    
+    <!-- Inspection badge/checkmark -->
+    <g transform="translate(200, 50)">
+      <circle cx="100" cy="100" r="60" fill="#10b981" opacity="0.9"/>
+      <path d="M 85 100 L 95 110 L 115 85" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+    
+    <!-- Document/Clipboard -->
+    <g transform="translate(50, 200)">
+      <rect x="0" y="0" width="80" height="100" rx="4" fill="#ffffff" opacity="0.95"/>
+      <line x1="15" y1="20" x2="65" y2="20" stroke="#3b82f6" stroke-width="2"/>
+      <line x1="15" y1="35" x2="65" y2="35" stroke="#3b82f6" stroke-width="2"/>
+      <line x1="15" y1="50" x2="50" y2="50" stroke="#3b82f6" stroke-width="2"/>
+      <circle cx="70" cy="15" r="8" fill="#10b981"/>
+      <path d="M 66 15 L 69 18 L 74 12" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+    
+    <!-- Magnifying glass -->
+    <g transform="translate(400, 250)">
+      <circle cx="50" cy="50" r="35" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.8"/>
+      <line x1="70" y1="70" x2="90" y2="90" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+    </g>
+  </g>
+  
+  <!-- Decorative elements -->
+  <circle cx="50" cy="50" r="30" fill="#ffffff" opacity="0.1"/>
+  <circle cx="550" cy="550" r="40" fill="#ffffff" opacity="0.1"/>
+  <circle cx="550" cy="100" r="25" fill="#ffffff" opacity="0.15"/>
+</svg>
+
+

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Iugu Tokenização</title>
+</head>
+<body>
+    <h1>Teste de Tokenização Iugu JS</h1>
+    <button id="testTokenization">Testar Tokenização com Valores Hardcoded</button>
+    <div id="result" style="margin-top: 20px; padding: 20px; background: #f0f0f0; border-radius: 4px;">
+        <h2>Resultado:</h2>
+        <pre id="output"></pre>
+    </div>
+
+    <script src="https://js.iugu.com/v2"></script>
+    <script>
+        // Substitua pelo masterAccountId real
+        const MASTER_ACCOUNT_ID = 'AB322336DF564D5D80AD8101356AE0EA';
+        
+        document.getElementById('testTokenization').addEventListener('click', async () => {
+            const output = document.getElementById('output');
+            output.textContent = 'Inicializando teste...\n';
+            
+            try {
+                // Configurar Iugu
+                if (typeof Iugu === 'undefined') {
+                    throw new Error('Iugu JS não carregado');
+                }
+                
+                Iugu.setAccountID(MASTER_ACCOUNT_ID);
+                Iugu.setTestMode(true);
+                
+                output.textContent += 'Iugu configurado com accountId: ' + MASTER_ACCOUNT_ID.substring(0, 8) + '***\n';
+                output.textContent += 'Modo de teste: true\n\n';
+                
+                // Valores hardcoded (cartão de teste válido)
+                const tokenData = {
+                    number: '4111111111111111', // Cartão de teste válido (Visa)
+                    verification_value: '123', // CVV
+                    first_name: 'Teste',
+                    last_name: 'Usuario',
+                    month: '12',
+                    year: '2026'
+                };
+                
+                output.textContent += 'Dados para tokenização (hardcoded):\n';
+                output.textContent += JSON.stringify({
+                    ...tokenData,
+                    number: tokenData.number.substring(0, 4) + '****' + tokenData.number.substring(tokenData.number.length - 4),
+                    verification_value: '***'
+                }, null, 2) + '\n\n';
+                output.textContent += 'Chamando Iugu.createPaymentToken...\n';
+                
+                // Chamar tokenização
+                Iugu.createPaymentToken(
+                    tokenData,
+                    (data) => {
+                        if (data.errors) {
+                            output.textContent += '\n❌ ERRO na tokenização:\n';
+                            output.textContent += JSON.stringify(data.errors, null, 2);
+                        } else if (data.id) {
+                            output.textContent += '\n✅ SUCESSO! Token gerado:\n';
+                            output.textContent += 'Token ID: ' + data.id + '\n';
+                            output.textContent += '\nResposta completa:\n';
+                            output.textContent += JSON.stringify(data, null, 2);
+                        } else {
+                            output.textContent += '\n⚠️ Resposta inesperada:\n';
+                            output.textContent += JSON.stringify(data, null, 2);
+                        }
+                    }
+                );
+            } catch (error) {
+                output.textContent += '\n❌ ERRO: ' + error.message;
+                output.textContent += '\nStack: ' + error.stack;
+            }
+        });
+    </script>
+</body>
+</html>

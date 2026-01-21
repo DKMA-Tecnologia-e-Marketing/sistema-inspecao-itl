@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1762121332647,
+      "tag": "0000_real_paladin",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1762121426931,
+      "tag": "0001_big_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1762908727371,
+      "tag": "0002_exotic_peter_quill",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1763823606394,
+      "tag": "0003_stiff_chamber",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1763827109029,
+      "tag": "0004_clumsy_big_bertha",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1763973363818,
+      "tag": "0005_parched_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1763976377538,
+      "tag": "0006_new_violations",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1763978633800,
+      "tag": "0007_special_clea",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1767791642739,
+      "tag": "0008_rainy_lilith",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1767792302088,
+      "tag": "0009_broad_night_nurse",
+      "breakpoints": true
+    }
+  ]
+}
