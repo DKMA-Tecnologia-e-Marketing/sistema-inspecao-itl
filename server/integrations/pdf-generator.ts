@@ -9,11 +9,9 @@ import { ptBR } from "date-fns/locale";
  * Gerar número de certificado no formato: 000000006-04
  */
 export async function generateCertificadoNumber(orgaoId: number): Promise<string> {
-  // Buscar último número de certificado do órgão
   const { getInspectionReportsByOrgao } = await import("../db");
   const reports = await getInspectionReportsByOrgao(orgaoId);
   
-  // Encontrar o maior número sequencial
   let maxNumber = 0;
   for (const report of reports) {
     if (report.numeroCertificado) {
@@ -27,7 +25,6 @@ export async function generateCertificadoNumber(orgaoId: number): Promise<string
     }
   }
 
-  // Próximo número
   const nextNumber = maxNumber + 1;
   const formattedNumber = String(nextNumber).padStart(9, "0");
   const suffix = String(orgaoId).padStart(2, "0");
@@ -36,7 +33,37 @@ export async function generateCertificadoNumber(orgaoId: number): Promise<string
 }
 
 /**
- * Gerar PDF do laudo seguindo template PMSP
+ * Gerar número de laudo no formato: 001/2024
+ */
+export async function generateLaudoNumber(orgaoId: number, tenantId?: number): Promise<string> {
+  const { getInspectionReportsByOrgao } = await import("../db");
+  const reports = await getInspectionReportsByOrgao(orgaoId);
+  
+  const currentYear = new Date().getFullYear();
+  
+  let maxNumber = 0;
+  for (const report of reports) {
+    if (report.numeroLaudo) {
+      const match = report.numeroLaudo.match(/^(\d+)\/(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        const year = parseInt(match[2], 10);
+        if (year === currentYear && num > maxNumber) {
+          maxNumber = num;
+        }
+      }
+    }
+  }
+
+  const nextNumber = maxNumber + 1;
+  const formattedNumber = String(nextNumber).padStart(3, "0");
+
+  return `${formattedNumber}/${currentYear}`;
+}
+
+/**
+ * Gerar PDF do laudo - RECRIADO DO ZERO baseado EXCLUSIVAMENTE no PDF de referência
+ * Layout oficial de laudo com blocos delimitados e posicionamento absoluto fixo
  */
 export async function generateReportPdf(
   report: InspectionReport,
@@ -47,8 +74,9 @@ export async function generateReportPdf(
   const { getCustomerById } = await import("../db");
   const { getInspectionTypeById } = await import("../db");
   const { getOrgaoById } = await import("../db");
+  const { getTenantById } = await import("../db");
+  const { getAllTecnicos } = await import("../db");
 
-  // Buscar dados relacionados
   const appointment = await getAppointmentById(report.appointmentId);
   if (!appointment) {
     throw new Error("Appointment não encontrado");
@@ -70,17 +98,46 @@ export async function generateReportPdf(
     throw new Error("Órgão não encontrado");
   }
 
-  // Criar documento PDF
+  const tenant = await getTenantById(appointment.tenantId);
+  if (!tenant) {
+    throw new Error("Tenant não encontrado");
+  }
+
+  const allTecnicos = await getAllTecnicos();
+  
+  const inspetorTecnico = report.cft 
+    ? allTecnicos.find(t => t.tipo === "inspetor" && t.cft === report.cft)
+    : null;
+  
+  const responsavelTecnico = report.crea
+    ? allTecnicos.find(t => t.tipo === "responsavel" && (t.crea === report.crea || t.nomeCompleto === report.responsavelTecnico))
+    : report.responsavelTecnico
+      ? allTecnicos.find(t => t.tipo === "responsavel" && t.nomeCompleto === report.responsavelTecnico)
+      : null;
+
+  const vehicleData = vehicle.dadosInfosimples as any || {};
+  const especie = vehicleData.especie || vehicleData.tipo || "N/A";
+  const tipo = vehicleData.tipo || vehicleData.especie || "N/A";
+  const carroceria = vehicleData.carroceria || vehicleData.carrocaria || "";
+  const versao = vehicleData.versao || "";
+  const potencia = vehicleData.potencia || vehicleData.potenciaCV || "";
+  const cilindrada = vehicleData.cilindrada || vehicleData.cilindradaCC || "";
+  const tara = vehicleData.tara || vehicleData.taraT || "";
+  const pbt = vehicleData.pbt || vehicleData.pbtT || "";
+  const cmt = vehicleData.cmt || vehicleData.cmtT || "";
+  const lotacao = vehicleData.lotacao || vehicleData.lotacaoP || "";
+  const combustivel = vehicleData.combustivel || "GASOLINA";
+  const uf = vehicleData.uf || vehicleData.estado || "";
+  const cpfCnpjVeiculo = vehicleData.cpfCnpj || vehicleData.cnpj || customer.cpf || "N/A";
+
   const doc = new PDFDocument({
     size: "A4",
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
   });
 
-  // Buffer para armazenar o PDF
   const chunks: Buffer[] = [];
   doc.on("data", (chunk) => chunks.push(chunk));
   
-  // Carregar fotos antes de gerar o PDF
   const photoBuffers: Record<string, Buffer> = {};
   for (const photo of photos) {
     try {
@@ -95,130 +152,439 @@ export async function generateReportPdf(
     doc.on("error", reject);
 
     try {
-      // Cabeçalho - Logo e informações da Prefeitura
-      doc.rect(0, 0, 595, 842).fill("#FFFFFF"); // Fundo branco
+      // Configurações gerais
+      const pageWidth = 595;
+      const pageHeight = 841;
+      const margin = 8;
+      const contentWidth = pageWidth - (margin * 2);
 
-      // Logo da Prefeitura (esquerda)
-      doc.fontSize(10)
-        .fillColor("#000000")
-        .text("PREFEITURA DE SÃO PAULO", 50, 30, { align: "left" })
-        .text("MOBILIDADE E TRANSPORTES", 50, 45, { align: "left" });
+      // Fundo branco
+      doc.rect(0, 0, pageWidth, pageHeight).fill("#FFFFFF");
 
-      // Informações da Secretaria (direita)
-      doc.fontSize(9)
-        .text("SECRETARIA MUNICIPAL DE MOBILIDADE E TRANSPORTES", 300, 30, { align: "right", width: 245 })
-        .text("Departamento de Transportes Públicos", 300, 45, { align: "right", width: 245 });
+      // Cores e estilos
+      doc.strokeColor("#000000");
+      doc.fillColor("#000000");
+      doc.lineWidth(0.5);
 
-      // Título do documento
+      let y = margin;
+
+      // ========== PRIMEIRA SEÇÃO - DADOS DA EMPRESA ==========
+      // Nome da empresa (negrito, maior, centralizado)
       doc.fontSize(12)
-        .font("Helvetica-Bold")
-        .text("TERMO DE COOPERAÇÃO Nº 001/2021. SMT.DTP.", 50, 70, { align: "center", width: 495 })
-        .fontSize(10)
-        .font("Helvetica")
-        .text("ANEXO II", 50, 85, { align: "center", width: 495 });
+         .font("Helvetica-Bold")
+         .text(tenant.nome || "CENTRO DE INSPECAO AUTOMOTIVA", margin, y, { width: contentWidth, align: "center" });
+      y += 15;
 
-      // Informações do certificado
-      doc.fontSize(10)
-        .font("Helvetica-Bold")
-        .text("OIA - Organismo de Inspeção Acreditado - INMETRO", 50, 110)
-        .text("ITE - Instituição Técnica de Engenharia - DENATRAN", 50, 125)
-        .text("PMSP - SMT - DTP", 50, 140)
-        .font("Helvetica")
-        .text(`NÚMERO DO CERTIFICADO: ${report.numeroCertificado || "N/A"}`, 50, 160)
-        .font("Helvetica-Bold")
-        .text("VEICULO APROVADO", 50, 180, { align: "center", width: 495 });
-
-      // Seção: Características do Veículo
-      doc.fontSize(11)
-        .font("Helvetica-Bold")
-        .text("CARACTERÍSTICAS ATUAIS DO VEÍCULO (DADOS DO CRLV)", 50, 220);
-
-      // Dados do veículo em duas colunas
-      const leftColX = 50;
-      const rightColX = 320;
-      let currentY = 245;
-
-      doc.fontSize(9)
-        .font("Helvetica")
-        .text(`Tipo: ${vehicle.marca || "N/A"}`, leftColX, currentY)
-        .text(`Marca/Modelo: ${vehicle.marca || "N/A"} / ${vehicle.modelo || "N/A"}`, leftColX, currentY + 15)
-        .text(`Placa: ${vehicle.placa}`, leftColX, currentY + 30)
-        .text(`Chassi: ${vehicle.chassi || "N/A"}`, leftColX, currentY + 45)
-        .text(`Renavam: ${vehicle.renavam || "N/A"}`, leftColX, currentY + 60);
-
-      doc.text(`Carroçaria: ${vehicle.modelo || "N/A"}`, rightColX, currentY)
-        .text(`Cor: ${vehicle.cor || "N/A"}`, rightColX, currentY + 15)
-        .text(`Combustível: GASOLINA`, rightColX, currentY + 30)
-        .text(`Ano de Fabricação/Modelo: ${vehicle.ano || "N/A"}/${vehicle.ano || "N/A"}`, rightColX, currentY + 45)
-        .text(`Lotação: 6`, rightColX, currentY + 60);
-
-      // Seção: Fotos do Veículo
-      const photosY = currentY + 90;
-      doc.fontSize(11)
-        .font("Helvetica-Bold")
-        .text("FOTOS DO VEÍCULO", 50, photosY);
-
-      // Posicionar as 4 fotos
-      const photoSize = 100;
-      const photoSpacing = 20;
-      const photosStartY = photosY + 25;
-
-      // Fotos em grid 2x2
-      const photoPositions = [
-        { x: 50, y: photosStartY, label: "TRASEIRA" },
-        { x: 270, y: photosStartY, label: "DIANTEIRA" },
-        { x: 50, y: photosStartY + photoSize + photoSpacing, label: "PLACA" },
-        { x: 270, y: photosStartY + photoSize + photoSpacing, label: "PANORAMICA" },
-      ];
-
-      for (let i = 0; i < photoPositions.length; i++) {
-        const pos = photoPositions[i];
-        const photo = photos.find((p) => {
-          const labels: Record<string, string> = {
-            traseira: "TRASEIRA",
-            dianteira: "DIANTEIRA",
-            placa: "PLACA",
-            panoramica: "PANORAMICA",
-          };
-          return labels[p.tipo] === pos.label;
-        });
-
-        if (photo && photoBuffers[photo.tipo]) {
-          try {
-            doc.image(photoBuffers[photo.tipo], pos.x, pos.y, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
-          } catch (error) {
-            console.error(`Erro ao carregar foto ${photo.tipo}:`, error);
-            // Desenhar retângulo vazio se foto não carregar
-            doc.rect(pos.x, pos.y, photoSize, photoSize).stroke();
-          }
-        } else {
-          // Desenhar retângulo vazio se não houver foto
-          doc.rect(pos.x, pos.y, photoSize, photoSize).stroke();
-        }
-
-        // Label da foto
-        doc.fontSize(8)
-          .text(pos.label, pos.x, pos.y + photoSize + 5);
+      // CNPJ (centralizado)
+      if (tenant.cnpj) {
+        doc.fontSize(9)
+           .font("Helvetica")
+           .text(`CNPJ: ${tenant.cnpj}`, margin, y, { width: contentWidth, align: "center" });
+        y += 12;
       }
 
-      // Informações de data e responsável técnico
-      const infoY = photosStartY + photoSize * 2 + photoSpacing + 40;
-      doc.fontSize(9)
-        .text(`Nº Laudo de Serviço: ${report.numeroLaudo || "0"}`, leftColX, infoY)
-        .text(`Data de Emissão: ${format(new Date(report.dataEmissao), "dd/MM/yyyy", { locale: ptBR })}`, leftColX, infoY + 15)
-        .text(`Responsável Técnico: ${report.responsavelTecnico || "N/A"} - CFT: ${report.cft || "N/A"}`, leftColX, infoY + 30);
+      // Endereço completo: Rua, Número e CEP
+      const enderecoLinha1 = tenant.endereco || "";
+      if (enderecoLinha1) {
+        doc.fontSize(9)
+           .font("Helvetica")
+           .text(enderecoLinha1, margin, y, { width: contentWidth, align: "center" });
+        y += 12;
+      }
 
-      doc.text(`Data de Emissão: ${format(new Date(report.dataEmissao), "dd/MM/yyyy", { locale: ptBR })}`, rightColX, infoY)
-        .text(`Data de Validade: ${report.dataValidade ? format(new Date(report.dataValidade), "dd/MM/yyyy", { locale: ptBR }) : "N/A"}`, rightColX, infoY + 15)
-        .text(`Responsável Técnico: ${report.responsavelTecnico || "N/A"} - ${report.crea || "N/A"} Crea: ${report.crea || "N/A"}`, rightColX, infoY + 30);
+      // CEP / Cidade - Estado (UF)
+      const enderecoLinha2 = tenant.cep && tenant.cidade && tenant.estado
+        ? `CEP: ${tenant.cep} / ${tenant.cidade} - ${tenant.estado}`
+        : tenant.cep && tenant.cidade
+        ? `CEP: ${tenant.cep} / ${tenant.cidade}`
+        : tenant.cidade && tenant.estado
+        ? `${tenant.cidade} - ${tenant.estado}`
+        : tenant.cep
+        ? `CEP: ${tenant.cep}`
+        : "";
+      if (enderecoLinha2) {
+        doc.fontSize(9)
+           .font("Helvetica")
+           .text(enderecoLinha2, margin, y, { width: contentWidth, align: "center" });
+        y += 12;
+      }
+
+      // Telefone (centralizado)
+      if (tenant.telefone) {
+        doc.fontSize(9)
+           .font("Helvetica")
+           .text(`TEL: ${tenant.telefone}`, margin, y, { width: contentWidth, align: "center" });
+        y += 15;
+      } else {
+        y += 10;
+      }
+
+      // ========== SEGUNDA SEÇÃO - CERTIFICADO E STATUS (CENTRALIZADOS) ==========
+      y += 5; // Espaçamento entre seções
+      
+      // Número do Certificado (centralizado)
+      const numeroCertificado = report.numeroCertificado || report.numeroLaudo || "N/A";
+      doc.fontSize(10)
+         .font("Helvetica-Bold")
+         .text(`NÚMERO DO CERTIFICADO: ${numeroCertificado}`, margin, y, { width: contentWidth, align: "center" });
+      y += 20;
+
+      // Título "VEICULO APROVADO" (centralizado)
+      doc.fontSize(14)
+         .font("Helvetica-Bold")
+         .text("VEICULO APROVADO", margin, y, { width: contentWidth, align: "center" });
+      y += 20;
+
+      // Linha separadora
+      doc.moveTo(margin, y).lineTo(margin + contentWidth, y).stroke();
+      y += 10;
+
+      // ========== DADOS DO PROPRIETÁRIO - LAYOUT REORGANIZADO ==========
+      const proprietarioStartY = y;
+      const colWidth = (contentWidth - 20) / 2; // Duas colunas lado a lado
+      const col2X = margin + colWidth + 20; // Posição da segunda coluna
+      const campoHeight = 35; // Altura padrão para cada campo
+
+      // 01. PROPRIETÁRIO (esquerda) - com borda
+      doc.rect(margin, y, colWidth, campoHeight).stroke();
+      doc.fontSize(9)
+         .font("Helvetica")
+         .text("01. PROPRIETÁRIO", margin + 5, y + 5, { width: colWidth - 10, align: "left" });
+      const nomeProprietario = customer.nome || "N/A";
+      doc.fontSize(10)
+         .font("Helvetica")
+         .text(nomeProprietario, margin + 5, y + 17, { width: colWidth - 10, align: "left" });
+      const linha1FinalY = y + campoHeight + 5;
+
+      // 02. CPF / CNPJ (direita, na frente da 01) - com borda
+      doc.rect(col2X, proprietarioStartY, colWidth, campoHeight).stroke();
+      doc.fontSize(9)
+         .font("Helvetica")
+         .text("02. CPF / CNPJ", col2X + 5, proprietarioStartY + 5, { width: colWidth - 10, align: "left" });
+      const cpfCnpj = customer.cpf || cpfCnpjVeiculo || "N/A";
+      doc.fontSize(10)
+         .font("Helvetica")
+         .text(cpfCnpj, col2X + 5, proprietarioStartY + 17, { width: colWidth - 10, align: "left" });
+
+      // 03. ENDEREÇO / CEP (embaixo da 01, largura total) - com borda
+      const enderecoHeight = 50;
+      doc.rect(margin, linha1FinalY, contentWidth, enderecoHeight).stroke();
+      doc.fontSize(9)
+         .font("Helvetica")
+         .text("03. ENDEREÇO / CEP", margin + 5, linha1FinalY + 5, { width: contentWidth - 10, align: "left" });
+      const enderecoCliente = customer.endereco 
+        ? `${customer.endereco}${customer.cep ? ` / ${customer.cep}` : ""}`
+        : customer.cep || "N/A";
+      doc.fontSize(10)
+         .font("Helvetica")
+         .text(enderecoCliente, margin + 5, linha1FinalY + 17, { width: contentWidth - 10, align: "left" });
+      doc.fontSize(8)
+         .font("Helvetica")
+         .text("CONFORME RESOLUÇÃO DO CONTRAN NÚMERO 310 DE 2009", margin + 5, linha1FinalY + 32, { width: contentWidth - 10, align: "left" });
+      y = linha1FinalY + enderecoHeight + 5;
+
+      // ========== CARACTERÍSTICAS ATUAIS DO VEÍCULO ==========
+      doc.fontSize(10)
+         .font("Helvetica-Bold")
+         .text("CARACTERÍSTICAS ATUAIS DO VEÍCULO (DADOS DO CRLV)", margin, y, { width: contentWidth, align: "center" });
+      y += 15;
+
+      let charY = y;
+      const spacing = 10; // Espaçamento entre colunas
+      const lineHeight = 15; // Altura entre linhas
+
+      // Função auxiliar para calcular posição X de uma coluna
+      const getColX = (colIndex: number, totalCols: number) => {
+        const colWidth = (contentWidth - (spacing * (totalCols - 1))) / totalCols;
+        return margin + (colIndex * (colWidth + spacing));
+      };
+
+      const getColWidth = (totalCols: number) => {
+        return (contentWidth - (spacing * (totalCols - 1))) / totalCols;
+      };
+
+      // LINHA 1: 04 e 05 (um na frente do outro) - com bordas
+      const linha1Cols = 2;
+      const linha1ColWidth = getColWidth(linha1Cols);
+      const campoCharHeight = 25;
+      
+      // Campo 04
+      doc.rect(getColX(0, linha1Cols), charY, linha1ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("04. ESPÉCIE / TIPO", getColX(0, linha1Cols) + 3, charY + 3, { width: linha1ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(`${especie} / ${tipo}`, getColX(0, linha1Cols) + 3, charY + 13, { width: linha1ColWidth - 6 });
+      
+      // Campo 05
+      doc.rect(getColX(1, linha1Cols), charY, linha1ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("05. CARROÇARIA", getColX(1, linha1Cols) + 3, charY + 3, { width: linha1ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(carroceria || "N/A", getColX(1, linha1Cols) + 3, charY + 13, { width: linha1ColWidth - 6 });
+      charY += campoCharHeight + 5;
+
+      // LINHA 2: 06, 07 e 08 (um na frente do outro) - com bordas
+      const linha2Cols = 3;
+      const linha2ColWidth = getColWidth(linha2Cols);
+      
+      const marcaModelo = (vehicleData.marca && vehicleData.modelo)
+        ? `${vehicleData.marca}/${vehicleData.modelo}${versao ? ` ${versao}` : ""}`
+        : (vehicle.marca && vehicle.modelo)
+        ? `${vehicle.marca}/${vehicle.modelo}${versao ? ` ${versao}` : ""}`
+        : vehicle.placa || "N/A";
+      const anoModelo = vehicleData.anoFabricacao && vehicleData.anoModelo
+        ? `${vehicleData.anoFabricacao}/${vehicleData.anoModelo}`
+        : vehicleData.anoFabricacao || vehicleData.anoModelo || vehicle.ano || "N/A";
+      
+      // Campo 06
+      doc.rect(getColX(0, linha2Cols), charY, linha2ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("06. MARCA / MODELO / VERSÃO", getColX(0, linha2Cols) + 3, charY + 3, { width: linha2ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(marcaModelo, getColX(0, linha2Cols) + 3, charY + 13, { width: linha2ColWidth - 6 });
+      
+      // Campo 07
+      doc.rect(getColX(1, linha2Cols), charY, linha2ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("07. COR", getColX(1, linha2Cols) + 3, charY + 3, { width: linha2ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(vehicleData.cor || vehicle.cor || "N/A", getColX(1, linha2Cols) + 3, charY + 13, { width: linha2ColWidth - 6 });
+      
+      // Campo 08
+      doc.rect(getColX(2, linha2Cols), charY, linha2ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("08. ANO DE FABRICAÇÃO / MODELO", getColX(2, linha2Cols) + 3, charY + 3, { width: linha2ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(anoModelo, getColX(2, linha2Cols) + 3, charY + 13, { width: linha2ColWidth - 6 });
+      charY += campoCharHeight + 5;
+
+      // LINHA 3: 09, 10, 11, 12 e 13 (um na frente do outro) - com bordas
+      const linha3Cols = 5;
+      const linha3ColWidth = getColWidth(linha3Cols);
+      
+      // Campo 09
+      doc.rect(getColX(0, linha3Cols), charY, linha3ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("09. PLACA / Nº", getColX(0, linha3Cols) + 3, charY + 3, { width: linha3ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(vehicle.placa || "N/A", getColX(0, linha3Cols) + 3, charY + 13, { width: linha3ColWidth - 6 });
+      
+      // Campo 10
+      doc.rect(getColX(1, linha3Cols), charY, linha3ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("10. NÚMERO DO CHASSI", getColX(1, linha3Cols) + 3, charY + 3, { width: linha3ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(vehicleData.chassi || vehicle.chassi || "N/A", getColX(1, linha3Cols) + 3, charY + 13, { width: linha3ColWidth - 6 });
+      
+      // Campo 11
+      doc.rect(getColX(2, linha3Cols), charY, linha3ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("11. COMBUSTÍVEL", getColX(2, linha3Cols) + 3, charY + 3, { width: linha3ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(combustivel, getColX(2, linha3Cols) + 3, charY + 13, { width: linha3ColWidth - 6 });
+      
+      // Campo 12
+      doc.rect(getColX(3, linha3Cols), charY, linha3ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("12. POTÊNCIA (CV)", getColX(3, linha3Cols) + 3, charY + 3, { width: linha3ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(potencia || "N/A", getColX(3, linha3Cols) + 3, charY + 13, { width: linha3ColWidth - 6 });
+      
+      // Campo 13
+      doc.rect(getColX(4, linha3Cols), charY, linha3ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("13. CILINDRADA (CC)", getColX(4, linha3Cols) + 3, charY + 3, { width: linha3ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(cilindrada || "N/A", getColX(4, linha3Cols) + 3, charY + 13, { width: linha3ColWidth - 6 });
+      charY += campoCharHeight + 5;
+
+      // LINHA 4: 14, 15, 16, 17 e 18 (um na frente do outro) - com bordas
+      const linha4Cols = 5;
+      const linha4ColWidth = getColWidth(linha4Cols);
+      
+      // Campo 14
+      doc.rect(getColX(0, linha4Cols), charY, linha4ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("14. TARA(T)", getColX(0, linha4Cols) + 3, charY + 3, { width: linha4ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(tara || "N/A", getColX(0, linha4Cols) + 3, charY + 13, { width: linha4ColWidth - 6 });
+      
+      // Campo 15
+      doc.rect(getColX(1, linha4Cols), charY, linha4ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("15. PBT (T)", getColX(1, linha4Cols) + 3, charY + 3, { width: linha4ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(pbt || "N/A", getColX(1, linha4Cols) + 3, charY + 13, { width: linha4ColWidth - 6 });
+      
+      // Campo 16
+      doc.rect(getColX(2, linha4Cols), charY, linha4ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("16. CMT (T)", getColX(2, linha4Cols) + 3, charY + 3, { width: linha4ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(cmt || "N/A", getColX(2, linha4Cols) + 3, charY + 13, { width: linha4ColWidth - 6 });
+      
+      // Campo 17
+      doc.rect(getColX(3, linha4Cols), charY, linha4ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("17. LOTAÇÃO (P)", getColX(3, linha4Cols) + 3, charY + 3, { width: linha4ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(lotacao || "N/A", getColX(3, linha4Cols) + 3, charY + 13, { width: linha4ColWidth - 6 });
+      
+      // Campo 18
+      doc.rect(getColX(4, linha4Cols), charY, linha4ColWidth, campoCharHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("18. RENAVAM", getColX(4, linha4Cols) + 3, charY + 3, { width: linha4ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(vehicle.renavam || "N/A", getColX(4, linha4Cols) + 3, charY + 13, { width: linha4ColWidth - 6 });
+      charY += campoCharHeight + 5;
+
+      // LINHA 5: 19. OBSERVAÇÕES (largura total) - com borda
+      const obsHeight = 30;
+      doc.rect(margin, charY, contentWidth, obsHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("19. OBSERVAÇÕES", margin + 5, charY + 3, { width: contentWidth - 10 });
+      const observacoes = appointment.observacoes || "N/A";
+      doc.fontSize(9).font("Helvetica").text(observacoes, margin + 5, charY + 13, { width: contentWidth - 10 });
+      charY += obsHeight + 5;
+
+      // ========== FOTOS DO VEICULO ==========
+      doc.fontSize(10)
+         .font("Helvetica-Bold")
+         .text("FOTOS DO VEICULO", margin, charY, { width: contentWidth, align: "center" });
+      charY += 15;
+
+      // Grid de fotos (2 colunas) - Tamanho padrão: 271 x 170
+      const fotoWidth = 271;
+      const fotoHeight = 170;
+      const fotoY = charY;
+      const fotoSpacing = (contentWidth - (fotoWidth * 2)) / 3; // Espaçamento entre fotos e margens
+      const fotoCol1X = margin + fotoSpacing;
+      const fotoCol2X = fotoCol1X + fotoWidth + fotoSpacing;
+
+      // Foto Traseira (esquerda)
+      doc.fontSize(8).font("Helvetica").text("TRASEIRA", fotoCol1X, fotoY, { width: fotoWidth, align: "center" });
+      if (photoBuffers["traseira"]) {
+        try {
+          doc.image(photoBuffers["traseira"], fotoCol1X, fotoY + 10, { 
+            width: fotoWidth, 
+            height: fotoHeight,
+            fit: [fotoWidth, fotoHeight]
+          });
+        } catch (error) {
+          console.error("Erro ao inserir foto traseira:", error);
+        }
+      }
+
+      // Foto Dianteira (direita)
+      doc.fontSize(8).font("Helvetica").text("DIANTEIRA", fotoCol2X, fotoY, { width: fotoWidth, align: "center" });
+      if (photoBuffers["dianteira"]) {
+        try {
+          doc.image(photoBuffers["dianteira"], fotoCol2X, fotoY + 10, { 
+            width: fotoWidth, 
+            height: fotoHeight,
+            fit: [fotoWidth, fotoHeight]
+          });
+        } catch (error) {
+          console.error("Erro ao inserir foto dianteira:", error);
+        }
+      }
+
+      charY = fotoY + fotoHeight + 20;
+
+      // ========== INFORMAÇÕES FINAIS ==========
+      const infoSpacing = 10;
+      const infoLineHeight = 15;
+
+      // Função auxiliar para calcular posição X de uma coluna (reutilizando)
+      const getInfoColX = (colIndex: number, totalCols: number) => {
+        const colWidth = (contentWidth - (infoSpacing * (totalCols - 1))) / totalCols;
+        return margin + (colIndex * (colWidth + infoSpacing));
+      };
+
+      const getInfoColWidth = (totalCols: number) => {
+        return (contentWidth - (infoSpacing * (totalCols - 1))) / totalCols;
+      };
+
+      // LINHA 1: 21, 22, 23 e 24 (um na frente do outro) - com bordas
+      const infoLinha1Cols = 4;
+      const infoLinha1ColWidth = getInfoColWidth(infoLinha1Cols);
+      let infoY = charY;
+      const infoCampoHeight = 25;
+      
+      const dataInspecao = appointment.dataAgendamento ? format(new Date(appointment.dataAgendamento), "dd/MM/yyyy", { locale: ptBR }) : "N/A";
+      const dataEmissao = report.createdAt ? format(new Date(report.createdAt), "dd/MM/yyyy", { locale: ptBR }) : format(new Date(), "dd/MM/yyyy", { locale: ptBR });
+      const dataValidade = report.dataValidade ? format(new Date(report.dataValidade), "dd/MM/yyyy", { locale: ptBR }) : "N/A";
+      
+      // Campo 21
+      doc.rect(getInfoColX(0, infoLinha1Cols), infoY, infoLinha1ColWidth, infoCampoHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("21. NUMERO DA ORDEM DE SERVIÇO", getInfoColX(0, infoLinha1Cols) + 3, infoY + 3, { width: infoLinha1ColWidth - 6 });
+      
+      // Campo 22
+      doc.rect(getInfoColX(1, infoLinha1Cols), infoY, infoLinha1ColWidth, infoCampoHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("22. DATA DE INSPEÇÃO", getInfoColX(1, infoLinha1Cols) + 3, infoY + 3, { width: infoLinha1ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(dataInspecao, getInfoColX(1, infoLinha1Cols) + 3, infoY + 13, { width: infoLinha1ColWidth - 6 });
+      
+      // Campo 23
+      doc.rect(getInfoColX(2, infoLinha1Cols), infoY, infoLinha1ColWidth, infoCampoHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("23. DATA DA EMISSÃO", getInfoColX(2, infoLinha1Cols) + 3, infoY + 3, { width: infoLinha1ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(dataEmissao, getInfoColX(2, infoLinha1Cols) + 3, infoY + 13, { width: infoLinha1ColWidth - 6 });
+      
+      // Campo 24
+      doc.rect(getInfoColX(3, infoLinha1Cols), infoY, infoLinha1ColWidth, infoCampoHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("24. DATA DE VALIDADE", getInfoColX(3, infoLinha1Cols) + 3, infoY + 3, { width: infoLinha1ColWidth - 6 });
+      doc.fontSize(9).font("Helvetica").text(dataValidade, getInfoColX(3, infoLinha1Cols) + 3, infoY + 13, { width: infoLinha1ColWidth - 6 });
+      
+      infoY += infoCampoHeight + 5;
+
+      // LINHA 2: 25 e 26 (um na frente do outro) - com bordas
+      const infoLinha2Cols = 2;
+      const infoLinha2ColWidth = getInfoColWidth(infoLinha2Cols);
+      const infoCampo25Height = inspetorTecnico && report.cft ? 40 : 30;
+      const infoCampo26Height = responsavelTecnico && report.crea ? 40 : 30;
+      const infoCampoMaxHeight = Math.max(infoCampo25Height, infoCampo26Height);
+      
+      // Campo 25 - Inspetor Técnico (coluna esquerda)
+      doc.rect(getInfoColX(0, infoLinha2Cols), infoY, infoLinha2ColWidth, infoCampoMaxHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("25. INSPETOR TÉCNICO", getInfoColX(0, infoLinha2Cols) + 3, infoY + 3, { width: infoLinha2ColWidth - 6 });
+      
+      const infoYContent = infoY + 13;
+      if (inspetorTecnico) {
+        const inspetorText = `${inspetorTecnico.nomeCompleto}${inspetorTecnico.cpf ? ` - ${inspetorTecnico.cpf}` : ""}`;
+        doc.fontSize(9).font("Helvetica").text(inspetorText, getInfoColX(0, infoLinha2Cols) + 3, infoYContent, { width: infoLinha2ColWidth - 6 });
+        if (report.cft) {
+          doc.fontSize(9).font("Helvetica").text(`CFT: ${report.cft}`, getInfoColX(0, infoLinha2Cols) + 3, infoYContent + 12, { width: infoLinha2ColWidth - 6 });
+        }
+      } else if (report.cft) {
+        doc.fontSize(9).font("Helvetica").text(`CFT: ${report.cft}`, getInfoColX(0, infoLinha2Cols) + 3, infoYContent, { width: infoLinha2ColWidth - 6 });
+      }
+
+      // Campo 26 - Responsável Técnico (coluna direita)
+      doc.rect(getInfoColX(1, infoLinha2Cols), infoY, infoLinha2ColWidth, infoCampoMaxHeight).stroke();
+      doc.fontSize(8).font("Helvetica").text("26. RESPONSÁVEL TÉCNICO", getInfoColX(1, infoLinha2Cols) + 3, infoY + 3, { width: infoLinha2ColWidth - 6 });
+      
+      if (responsavelTecnico) {
+        const responsavelText = `${responsavelTecnico.nomeCompleto}${responsavelTecnico.cpf ? ` - ${responsavelTecnico.cpf}` : ""}`;
+        doc.fontSize(9).font("Helvetica").text(responsavelText, getInfoColX(1, infoLinha2Cols) + 3, infoYContent, { width: infoLinha2ColWidth - 6 });
+        if (report.crea) {
+          doc.fontSize(9).font("Helvetica").text(`Crea: ${report.crea}`, getInfoColX(1, infoLinha2Cols) + 3, infoYContent + 12, { width: infoLinha2ColWidth - 6 });
+        }
+      } else if (report.responsavelTecnico) {
+        doc.fontSize(9).font("Helvetica").text(report.responsavelTecnico, getInfoColX(1, infoLinha2Cols) + 3, infoYContent, { width: infoLinha2ColWidth - 6 });
+        if (report.crea) {
+          doc.fontSize(9).font("Helvetica").text(`Crea: ${report.crea}`, getInfoColX(1, infoLinha2Cols) + 3, infoYContent + 12, { width: infoLinha2ColWidth - 6 });
+        }
+      }
 
       // Rodapé
-      const footerY = 800;
-      doc.fontSize(8)
-        .text(`CERTIFICADO PMSP - SMT - DTP ${report.numeroCertificado || ""}`, 50, footerY, { align: "center", width: 495 })
-        .text(`Documento criado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}`, 50, footerY + 15, { align: "center", width: 495 })
-        .text("Este certificado poderá ser validado através do Sistema SIBUT", 50, footerY + 30, { align: "center", width: 495 })
-        .text("Página 1 de 1", 50, footerY + 45, { align: "right", width: 495 });
+      const rodapeY = pageHeight - 50;
+      doc.fontSize(7).font("Helvetica").text(
+        `CERTIFICADO ${orgao.sigla || orgao.nome || ""} - ${numeroCertificado}`,
+        margin,
+        rodapeY,
+        { width: contentWidth, align: "center" }
+      );
+
+      const rodapeY2 = rodapeY + 10;
+      const dataHora = format(new Date(), "dd/MM/yyyy 'as' HH:mm:ss", { locale: ptBR });
+      doc.fontSize(7).font("Helvetica").text(
+        `Arquivo criado em ${dataHora} - Otimiza TI - SISLIT`,
+        margin,
+        rodapeY2,
+        { width: contentWidth, align: "center" }
+      );
+
+      const rodapeY3 = rodapeY2 + 10;
+      doc.fontSize(7).font("Helvetica").text(
+        "Este certificado poderá ser validado através do Sistema SISLIT",
+        margin,
+        rodapeY3,
+        { width: contentWidth, align: "center" }
+      );
+
+      const rodapeY4 = rodapeY3 + 10;
+      doc.fontSize(7).font("Helvetica").text(
+        "Pagina 1 de 1",
+        margin,
+        rodapeY4,
+        { width: contentWidth, align: "center" }
+      );
+
+      const rodapeY5 = rodapeY4 + 8;
+      doc.fontSize(6).font("Helvetica").text(
+        "FORM-CER-PMSP - SMT - DTP- REVISÃO 01 31/05/2021",
+        margin,
+        rodapeY5,
+        { width: contentWidth, align: "center" }
+      );
 
       doc.end();
     } catch (error) {
@@ -226,12 +592,13 @@ export async function generateReportPdf(
     }
   });
 
-  // Juntar chunks em um único buffer
   const pdfBuffer = Buffer.concat(chunks);
 
-  // Salvar PDF
-  const pdfPath = await saveReportPdf(report.id, pdfBuffer, report.numeroCertificado || "N/A");
+  const fileNameNumber = report.numeroLaudo 
+    ? report.numeroLaudo.replace(/\//g, "-") 
+    : (report.numeroCertificado || "N-A");
+
+  const pdfPath = await saveReportPdf(report.id, pdfBuffer, fileNameNumber);
 
   return pdfPath;
 }
-

@@ -2516,6 +2516,158 @@ export const appRouter = router({
       }),
   }),
 
+  // ============= TÉCNICOS ROUTES =============
+  tecnicos: router({
+    list: adminProcedure.query(async () => {
+      return await db.getAllTecnicos();
+    }),
+
+    listByTipo: tenantProcedure
+      .input(z.object({ tipo: z.enum(["inspetor", "responsavel"]) }))
+      .query(async ({ input, ctx }) => {
+        // Se for admin, retorna todos; se for operador, filtra por tenant
+        if (ctx.user.role === "admin") {
+          return await db.getTecnicosByTipo(input.tipo);
+        }
+        const tecnicos = await db.getTecnicosByTipo(input.tipo);
+        return tecnicos.filter((t) => t.tenantId === ctx.user.tenantId);
+      }),
+
+    listByTenant: tenantProcedure
+      .input(z.object({ tenantId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        // Verificar se o usuário tem acesso a este tenant
+        if (ctx.user.role !== "admin" && ctx.user.tenantId !== input.tenantId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado a este estabelecimento" });
+        }
+        return await db.getTecnicosByTenant(input.tenantId);
+      }),
+
+    getById: tenantProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const tecnico = await db.getTecnicoById(input.id);
+        if (!tecnico) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Técnico não encontrado" });
+        }
+        // Verificar se o usuário tem acesso a este técnico
+        if (ctx.user.role !== "admin" && tecnico.tenantId !== ctx.user.tenantId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado a este técnico" });
+        }
+        return tecnico;
+      }),
+
+    create: tenantProcedure
+      .input(
+        z.object({
+          tipo: z.enum(["inspetor", "responsavel"]),
+          nomeCompleto: z.string().min(1),
+          cpf: z.string().min(11).max(14),
+          cft: z.string().optional(),
+          crea: z.string().optional(),
+          tenantId: z.number().optional(),
+          ativo: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Validar campos obrigatórios baseado no tipo
+        if (input.tipo === "inspetor" && !input.cft) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "CFT é obrigatório para Inspetor Técnico" });
+        }
+        if (input.tipo === "responsavel" && !input.crea) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "CREA é obrigatório para Responsável Técnico" });
+        }
+
+        // Se for operador, usar o tenantId do usuário
+        const finalTenantId = ctx.user.role === "admin" ? input.tenantId : ctx.user.tenantId;
+
+        // Limpar campos que não pertencem ao tipo
+        const data: any = {
+          tipo: input.tipo,
+          nomeCompleto: input.nomeCompleto,
+          cpf: input.cpf,
+          tenantId: finalTenantId,
+          ativo: input.ativo ?? true,
+        };
+
+        if (input.tipo === "inspetor") {
+          data.cft = input.cft;
+          data.crea = null;
+        } else {
+          data.crea = input.crea;
+          data.cft = null;
+        }
+
+        return await db.createTecnico(data);
+      }),
+
+    update: tenantProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          tipo: z.enum(["inspetor", "responsavel"]).optional(),
+          nomeCompleto: z.string().min(1).optional(),
+          cpf: z.string().min(11).max(14).optional(),
+          cft: z.string().optional(),
+          crea: z.string().optional(),
+          tenantId: z.number().optional().nullable(),
+          ativo: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+
+        // Verificar se o técnico existe e se o usuário tem acesso
+        const tecnico = await db.getTecnicoById(id);
+        if (!tecnico) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Técnico não encontrado" });
+        }
+        if (ctx.user.role !== "admin" && tecnico.tenantId !== ctx.user.tenantId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado a este técnico" });
+        }
+
+        // Se for operador, garantir que o tenantId não seja alterado
+        if (ctx.user.role !== "admin" && data.tenantId !== undefined) {
+          data.tenantId = ctx.user.tenantId;
+        }
+
+        // Se o tipo está sendo atualizado, validar campos obrigatórios
+        if (data.tipo) {
+          if (data.tipo === "inspetor" && data.cft === null) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CFT é obrigatório para Inspetor Técnico" });
+          }
+          if (data.tipo === "responsavel" && data.crea === null) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CREA é obrigatório para Responsável Técnico" });
+          }
+        } else {
+          // Validar campos baseado no tipo atual
+          if (tecnico.tipo === "inspetor" && data.cft === null && tecnico.cft === null) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CFT é obrigatório para Inspetor Técnico" });
+          }
+          if (tecnico.tipo === "responsavel" && data.crea === null && tecnico.crea === null) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "CREA é obrigatório para Responsável Técnico" });
+          }
+        }
+
+        return await db.updateTecnico(id, data);
+      }),
+
+    delete: tenantProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        // Verificar se o técnico existe e se o usuário tem acesso
+        const tecnico = await db.getTecnicoById(input.id);
+        if (!tecnico) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Técnico não encontrado" });
+        }
+        if (ctx.user.role !== "admin" && tecnico.tenantId !== ctx.user.tenantId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado a este técnico" });
+        }
+        await db.deleteTecnico(input.id);
+        return { success: true };
+      }),
+  }),
+
   // ============= COMPANY ROUTES =============
   companies: router({
     listByTenant: tenantProcedure
@@ -3954,6 +4106,18 @@ export const appRouter = router({
 
   // ============= INSPECTION REPORT ROUTES =============
   inspectionReports: router({
+    getNextLaudoNumber: protectedProcedure
+      .input(
+        z.object({
+          orgaoId: z.number(),
+          tenantId: z.number().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        const { generateLaudoNumber } = await import("./integrations/pdf-generator");
+        return await generateLaudoNumber(input.orgaoId, input.tenantId);
+      }),
+
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
       const report = await db.getInspectionReportById(input.id);
       if (!report) {
@@ -4061,14 +4225,15 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        // Verificar se o appointment existe e está realizado
+        // Verificar se o appointment existe e tem status válido para gerar laudo
         const appointment = await db.getAppointmentById(input.appointmentId);
         if (!appointment) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Inspeção não encontrada" });
         }
 
-        if (appointment.status !== "realizado") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Apenas inspeções realizadas podem gerar laudo" });
+        // Permitir gerar laudo para inspeções pendentes, confirmadas ou realizadas
+        if (appointment.status !== "pendente" && appointment.status !== "confirmado" && appointment.status !== "realizado") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Apenas inspeções pendentes, confirmadas ou realizadas podem gerar laudo" });
         }
 
         // Verificar se já existe laudo para este appointment
@@ -4127,7 +4292,7 @@ export const appRouter = router({
           reportId: z.number(),
           photos: z.array(
             z.object({
-              tipo: z.enum(["traseira", "dianteira", "placa", "panoramica"]),
+              tipo: z.enum(["traseira", "dianteira"]),
               fileData: z.string(), // Base64
               fileName: z.string(),
             })
@@ -4148,8 +4313,8 @@ export const appRouter = router({
           }
         }
 
-        // Validar que tem as 4 fotos obrigatórias
-        const tiposObrigatorios = ["traseira", "dianteira", "placa", "panoramica"];
+        // Validar que tem as 2 fotos obrigatórias
+        const tiposObrigatorios = ["traseira", "dianteira"];
         const tiposEnviados = input.photos.map((p) => p.tipo);
         const tiposFaltando = tiposObrigatorios.filter((t) => !tiposEnviados.includes(t));
 
@@ -4193,10 +4358,19 @@ export const appRouter = router({
           }
         }
 
-        // Verificar se tem as 4 fotos
+        // Verificar se tem as 2 fotos obrigatórias (traseira e dianteira)
         const photos = await db.getInspectionReportPhotosByReport(input.reportId);
-        if (photos.length < 4) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "É necessário ter as 4 fotos obrigatórias para gerar o PDF" });
+        if (photos.length < 2) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "É necessário ter as 2 fotos obrigatórias (traseira e dianteira) para gerar o PDF" });
+        }
+        
+        // Verificar se tem as fotos obrigatórias
+        const tiposObrigatorios = ["traseira", "dianteira"];
+        const tiposEnviados = photos.map((p) => p.tipo);
+        const tiposFaltando = tiposObrigatorios.filter((t) => !tiposEnviados.includes(t));
+        
+        if (tiposFaltando.length > 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Fotos obrigatórias faltando: ${tiposFaltando.join(", ")}` });
         }
 
         // Gerar PDF

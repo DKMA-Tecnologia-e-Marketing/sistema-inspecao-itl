@@ -683,3 +683,22 @@ export const systemConfig = mysqlTable("systemConfig", {
 
 export type SystemConfig = typeof systemConfig.$inferSelect;
 export type InsertSystemConfig = typeof systemConfig.$inferInsert;
+
+/**
+ * Técnicos (Inspetor Técnico e Responsável Técnico)
+ */
+export const tecnicos = mysqlTable("tecnicos", {
+  id: int("id").autoincrement().primaryKey(),
+  tipo: mysqlEnum("tipo", ["inspetor", "responsavel"]).notNull(),
+  nomeCompleto: varchar("nomeCompleto", { length: 255 }).notNull(),
+  cpf: varchar("cpf", { length: 14 }).notNull(),
+  cft: varchar("cft", { length: 50 }), // Apenas para Inspetor Técnico
+  crea: varchar("crea", { length: 50 }), // Apenas para Responsável Técnico
+  tenantId: int("tenantId"), // Opcional: pode estar vinculado a um estabelecimento
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Tecnico = typeof tecnicos.$inferSelect;
+export type InsertTecnico = typeof tecnicos.$inferInsert;

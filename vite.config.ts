@@ -56,9 +56,10 @@ export default defineConfig({
   server: {
     port: 5005,
     host: true,
+    strictPort: false,
     proxy: {
       "/api": {
-        target: "http://localhost:5006",
+        target: process.env.VITE_BACKEND_PORT ? `http://localhost:${process.env.VITE_BACKEND_PORT}` : "http://localhost:5008",
         changeOrigin: true,
         secure: false,
       },

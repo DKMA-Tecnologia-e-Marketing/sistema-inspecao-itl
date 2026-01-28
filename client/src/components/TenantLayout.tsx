@@ -16,6 +16,7 @@ import {
   X,
   ChevronRight,
   DollarSign,
+  Wrench,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -54,6 +55,7 @@ const tenantNavSections: NavSection[] = [
     title: "Sistema",
     items: [
       { icon: Users, label: "Usuários", path: "/tenant/users" },
+      { icon: Wrench, label: "Técnicos", path: "/tenant/tecnicos" },
       { icon: FileText, label: "Relatórios", path: "/tenant/reports" },
       { icon: Settings, label: "Configurações", path: "/tenant/settings" },
     ],

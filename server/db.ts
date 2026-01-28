@@ -107,6 +107,9 @@ import {
   systemConfig,
   InsertSystemConfig,
   SystemConfig,
+  tecnicos,
+  InsertTecnico,
+  Tecnico,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -3031,5 +3034,119 @@ export async function getAllSystemConfigs(): Promise<SystemConfig[]> {
     }
     console.error(`[DB] Erro ao buscar todas as systemConfigs:`, error.message);
     return [];
+  }
+}
+
+// ============= TÉCNICOS ROUTES =============
+export async function getAllTecnicos() {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    return await db.select().from(tecnicos).orderBy(desc(tecnicos.createdAt));
+  } catch (error: any) {
+    console.error(`[DB] Erro ao buscar todos os técnicos:`, error.message);
+    return [];
+  }
+}
+
+export async function getTecnicoById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  try {
+    const result = await db.select().from(tecnicos).where(eq(tecnicos.id, id)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  } catch (error: any) {
+    console.error(`[DB] Erro ao buscar técnico por ID:`, error.message);
+    return undefined;
+  }
+}
+
+export async function getTecnicosByTipo(tipo: "inspetor" | "responsavel") {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    return await db.select().from(tecnicos).where(eq(tecnicos.tipo, tipo)).orderBy(desc(tecnicos.createdAt));
+  } catch (error: any) {
+    console.error(`[DB] Erro ao buscar técnicos por tipo:`, error.message);
+    return [];
+  }
+}
+
+export async function getTecnicosByTenant(tenantId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    return await db.select().from(tecnicos).where(eq(tecnicos.tenantId, tenantId)).orderBy(desc(tecnicos.createdAt));
+  } catch (error: any) {
+    console.error(`[DB] Erro ao buscar técnicos por tenant:`, error.message);
+    return [];
+  }
+}
+
+export async function createTecnico(tecnico: InsertTecnico) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  try {
+    // Validar campos obrigatórios baseado no tipo
+    if (tecnico.tipo === "inspetor" && !tecnico.cft) {
+      throw new Error("CFT é obrigatório para Inspetor Técnico");
+    }
+    if (tecnico.tipo === "responsavel" && !tecnico.crea) {
+      throw new Error("CREA é obrigatório para Responsável Técnico");
+    }
+
+    const result = await db.insert(tecnicos).values(tecnico);
+    const insertId = (result[0] as any).insertId;
+    return await getTecnicoById(insertId);
+  } catch (error: any) {
+    console.error(`[DB] Erro ao criar técnico:`, error.message);
+    throw error;
+  }
+}
+
+export async function updateTecnico(id: number, data: Partial<InsertTecnico>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  try {
+    // Validar campos obrigatórios baseado no tipo se estiver sendo atualizado
+    if (data.tipo === "inspetor" && data.cft === null) {
+      throw new Error("CFT é obrigatório para Inspetor Técnico");
+    }
+    if (data.tipo === "responsavel" && data.crea === null) {
+      throw new Error("CREA é obrigatório para Responsável Técnico");
+    }
+
+    // Filtrar campos undefined
+    const safeData: any = {};
+    Object.keys(data).forEach((key) => {
+      if (data[key as keyof typeof data] !== undefined) {
+        safeData[key] = data[key as keyof typeof data];
+      }
+    });
+
+    await db.update(tecnicos).set(safeData).where(eq(tecnicos.id, id));
+    return await getTecnicoById(id);
+  } catch (error: any) {
+    console.error(`[DB] Erro ao atualizar técnico:`, error.message);
+    throw error;
+  }
+}
+
+export async function deleteTecnico(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  try {
+    await db.delete(tecnicos).where(eq(tecnicos.id, id));
+    return { success: true };
+  } catch (error: any) {
+    console.error(`[DB] Erro ao deletar técnico:`, error.message);
+    throw error;
   }
 }

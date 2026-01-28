@@ -18,7 +18,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { Search, Eye, Plus, Car, User, CheckCircle, Building2, CreditCard, DollarSign, FileText, Upload, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { APPOINTMENT_STATUS } from "@shared/constants";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -28,6 +28,23 @@ import PaymentCheckout from "@/components/PaymentCheckout";
 export default function TenantAppointments() {
   const { data: user } = trpc.auth.me.useQuery();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const utils = trpc.useUtils();
+  
+  // Mutation para regenerar PDF
+  const regeneratePdfMutation = trpc.inspectionReports.generatePdf.useMutation({
+    onSuccess: () => {
+      toast.success("PDF gerado com sucesso! Recarregando página...");
+      // Invalidar cache para atualizar os dados
+      utils.appointments.listByTenant.invalidate();
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    },
+    onError: (error) => {
+      toast.error("Erro ao gerar PDF: " + error.message);
+      console.error("[Regenerar PDF] Erro:", error);
+    },
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [newVehicleDialogOpen, setNewVehicleDialogOpen] = useState(false);
   const [newInspectionDialogOpen, setNewInspectionDialogOpen] = useState(false);
@@ -71,8 +88,8 @@ export default function TenantAppointments() {
     { enabled: !!user?.tenantId }
   );
 
-  const { data: inspectionTypePricing } = trpc.inspectionTypePricing.listByTenant.useQuery(
-    { tenantId: user?.tenantId },
+  const { data: inspectionTypePricing, isLoading: loadingTypes, error: typesError } = trpc.inspectionTypePricing.listByTenant.useQuery(
+    { tenantId: user?.tenantId ?? undefined },
     { enabled: !!user?.tenantId }
   );
   const { data: inspectionLines } = trpc.inspectionLines.listByTenant.useQuery(
@@ -98,7 +115,6 @@ export default function TenantAppointments() {
       toast.error("Erro ao deletar inspeção: " + error.message);
     },
   });
-  const utils = trpc.useUtils();
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -798,21 +814,49 @@ export default function TenantAppointments() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="inspectionType">Tipo de Inspeção *</Label>
-                      <Select
-                        value={selectedInspectionType ? selectedInspectionType.toString() : undefined}
-                        onValueChange={(value) => setSelectedInspectionType(value ? parseInt(value) : null)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {inspectionTypePricing?.filter((pricing) => pricing.type.id != null).map((pricing) => (
-                            <SelectItem key={pricing.type.id} value={pricing.type.id.toString()}>
-                              {pricing.type.nome} - R$ {(pricing.precoAtual / 100).toFixed(2).replace(".", ",")}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {loadingTypes ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground p-2">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                          Carregando tipos de inspeção...
+                        </div>
+                      ) : typesError ? (
+                        <div className="p-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-800">
+                          Erro ao carregar tipos de inspeção: {typesError.message}
+                        </div>
+                      ) : (
+                        <Select
+                          value={selectedInspectionType ? selectedInspectionType.toString() : undefined}
+                          onValueChange={(value) => setSelectedInspectionType(value ? parseInt(value) : null)}
+                          disabled={!inspectionTypePricing || inspectionTypePricing.length === 0}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {inspectionTypePricing && inspectionTypePricing.length > 0 ? (
+                              inspectionTypePricing.filter((pricing) => pricing.type.id != null).map((pricing) => (
+                                <SelectItem key={pricing.type.id} value={pricing.type.id.toString()}>
+                                  {pricing.type.nome} - R$ {(pricing.precoAtual / 100).toFixed(2).replace(".", ",")}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                Nenhum tipo de inspeção disponível. Configure os tipos de inspeção no painel administrativo.
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {!loadingTypes && !typesError && (!inspectionTypePricing || inspectionTypePricing.length === 0) && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-md mt-2">
+                          <p className="text-sm text-blue-800">
+                            <strong>ℹ️ Nenhum tipo de inspeção configurado</strong>
+                          </p>
+                          <p className="text-xs text-blue-700 mt-1">
+                            Para criar inspeções, você precisa configurar os tipos de inspeção disponíveis. Acesse a página de <strong>Precificação</strong> no menu lateral para configurar.
+                          </p>
+                        </div>
+                      )}
                       {selectedInspectionType && (
                         <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                           {(() => {
@@ -1050,7 +1094,101 @@ export default function TenantAppointments() {
                               <Eye className="h-4 w-4 mr-1" />
                               Ver
                             </Button>
-                            {appointment.status === "realizado" && !appointment.inspectionReport ? (
+                            {appointment.inspectionReport ? (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                disabled={regeneratePdfMutation.isPending}
+                                onClick={async () => {
+                                  try {
+                                    // Verificar se o laudo existe
+                                    if (!appointment.inspectionReport) {
+                                      toast.error("Laudo não encontrado. Gere um laudo primeiro.");
+                                      return;
+                                    }
+
+                                    // O pdfPath já vem como /storage/reports/... do banco
+                                    // O endpoint /api/storage espera o caminho sem /storage
+                                    let pdfPath = appointment.inspectionReport?.pdfPath;
+                                    
+                                    // Se não tem pdfPath, oferecer regenerar
+                                    if (!pdfPath) {
+                                      const regenerate = confirm("PDF não encontrado. Deseja gerar o PDF agora?\n\nIsso pode levar alguns segundos...");
+                                      if (regenerate) {
+                                        toast.info("Gerando PDF... Aguarde.");
+                                        try {
+                                          await regeneratePdfMutation.mutateAsync({ reportId: appointment.inspectionReport.id });
+                                        } catch (error: any) {
+                                          toast.error("Erro ao gerar PDF: " + (error.message || "Erro desconhecido"));
+                                        }
+                                      }
+                                      return;
+                                    }
+
+                                    if (pdfPath.startsWith("/storage/")) {
+                                      pdfPath = pdfPath.replace("/storage/", "");
+                                    }
+                                    // Garantir que não comece com /
+                                    if (pdfPath.startsWith("/")) {
+                                      pdfPath = pdfPath.substring(1);
+                                    }
+                                    
+                                    // Determinar a URL base do backend
+                                    // window.open não usa o proxy do Vite, então precisamos da URL completa
+                                    // Em desenvolvimento, usar localhost:5008, em produção usar a mesma origem
+                                    const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+                                    const backendUrl = isLocalhost 
+                                      ? "http://localhost:5008" 
+                                      : window.location.origin;
+                                    const pdfUrl = `${backendUrl}/api/storage/${pdfPath}`;
+                                    
+                                    console.log("[Ver Laudo] Abrindo PDF:", pdfUrl);
+                                    
+                                    // Verificar se o PDF existe fazendo uma requisição HEAD
+                                    try {
+                                      const response = await fetch(pdfUrl, { method: "HEAD" });
+                                      if (!response.ok) {
+                                        // PDF não existe, oferecer regenerar
+                                        const regenerate = confirm("PDF não encontrado no servidor. Deseja gerar o PDF agora?\n\nIsso pode levar alguns segundos...");
+                                        if (regenerate) {
+                                          toast.info("Gerando PDF... Aguarde.");
+                                          try {
+                                            await regeneratePdfMutation.mutateAsync({ reportId: appointment.inspectionReport.id });
+                                          } catch (error: any) {
+                                            toast.error("Erro ao gerar PDF: " + (error.message || "Erro desconhecido"));
+                                          }
+                                        }
+                                        return;
+                                      }
+                                    } catch (fetchError) {
+                                      console.error("[Ver Laudo] Erro ao verificar PDF:", fetchError);
+                                      // Continuar tentando abrir mesmo assim
+                                    }
+                                    
+                                    // Tentar abrir em nova aba
+                                    const newWindow = window.open(pdfUrl, "_blank");
+                                    
+                                    // Se window.open retornar null (bloqueado por popup blocker), criar link e clicar
+                                    if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+                                      // Criar link temporário e clicar nele
+                                      const link = document.createElement("a");
+                                      link.href = pdfUrl;
+                                      link.target = "_blank";
+                                      link.rel = "noopener noreferrer";
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      document.body.removeChild(link);
+                                    }
+                                  } catch (error: any) {
+                                    console.error("[Ver Laudo] Erro:", error);
+                                    toast.error("Erro ao abrir PDF: " + (error.message || "Erro desconhecido"));
+                                  }
+                                }}
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                {regeneratePdfMutation.isPending ? "Gerando PDF..." : "Ver Laudo"}
+                              </Button>
+                            ) : (appointment.status === "pendente" || appointment.status === "confirmado" || appointment.status === "realizado") ? (
                               <Button
                                 variant="default"
                                 size="sm"
@@ -1061,23 +1199,6 @@ export default function TenantAppointments() {
                               >
                                 <FileText className="h-4 w-4 mr-1" />
                                 Gerar Laudo
-                              </Button>
-                            ) : appointment.inspectionReport?.pdfPath ? (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => {
-                                  // Remover o prefixo /storage se existir, pois o endpoint /api/storage já adiciona isso
-                                  let pdfPath = appointment.inspectionReport.pdfPath;
-                                  if (pdfPath.startsWith("/storage/")) {
-                                    pdfPath = pdfPath.replace("/storage/", "/");
-                                  }
-                                  const pdfUrl = `/api/storage${pdfPath}`;
-                                  window.open(pdfUrl, "_blank");
-                                }}
-                              >
-                                <FileText className="h-4 w-4 mr-1" />
-                                Ver Laudo
                               </Button>
                             ) : appointment.companyId || appointment.invoiceInfo?.boletoUrl ? null : appointment.status !== "realizado" && getAppointmentPrice(appointment.id) > 0 ? (
                               <Button
@@ -1298,7 +1419,7 @@ export default function TenantAppointments() {
             <DialogHeader>
               <DialogTitle>Gerar Laudo de Inspeção</DialogTitle>
               <DialogDescription>
-                Preencha os dados e anexe as 4 fotos obrigatórias para gerar o laudo
+                Preencha os dados e anexe as 2 fotos obrigatórias (traseira e dianteira) para gerar o laudo
               </DialogDescription>
             </DialogHeader>
 
@@ -1334,20 +1455,34 @@ function GenerateLaudoDialogContent({
   const [photos, setPhotos] = useState<Record<string, { file: File | null; preview: string | null }>>({
     traseira: { file: null, preview: null },
     dianteira: { file: null, preview: null },
-    placa: { file: null, preview: null },
-    panoramica: { file: null, preview: null },
   });
   const [form, setForm] = useState({
     numeroLaudo: "",
-    responsavelTecnico: "",
-    cft: "",
-    crea: "",
+    inspetorId: null as number | null,
+    responsavelId: null as number | null,
     dataValidade: "",
   });
 
+  const utils = trpc.useUtils();
+
   const appointment = appointments?.find((a: any) => a.id === appointmentId);
+  const { data: user } = trpc.auth.me.useQuery();
   // Buscar órgãos ativos (endpoint disponível para tenants)
   const { data: orgaos } = trpc.orgaos.listActive.useQuery();
+  
+  // Buscar técnicos do tenant
+  const { data: inspetores } = trpc.tecnicos.listByTipo.useQuery(
+    { tipo: "inspetor" },
+    { enabled: !!user?.tenantId }
+  );
+  const { data: responsaveis } = trpc.tecnicos.listByTipo.useQuery(
+    { tipo: "responsavel" },
+    { enabled: !!user?.tenantId }
+  );
+  
+  // Filtrar técnicos do tenant atual
+  const filteredInspetores = inspetores?.filter((t) => !user?.tenantId || t.tenantId === user.tenantId) || [];
+  const filteredResponsaveis = responsaveis?.filter((t) => !user?.tenantId || t.tenantId === user.tenantId) || [];
   const createReportMutation = trpc.inspectionReports.create.useMutation();
   const uploadPhotosMutation = trpc.inspectionReports.uploadPhotos.useMutation();
   const generatePdfMutation = trpc.inspectionReports.generatePdf.useMutation();
@@ -1358,8 +1493,42 @@ function GenerateLaudoDialogContent({
     ? orgaos.find((o) => o.nome === appointment.inspectionType.orgao || o.sigla === appointment.inspectionType.orgao)
     : null;
   
-  // Usar o órgão do tipo de inspeção ou o selecionado
-  const orgao = orgaoFromType || (selectedOrgaoId && orgaos ? orgaos.find((o) => o.id === selectedOrgaoId) : null);
+  // Usar o órgão do tipo de inspeção ou o selecionado, ou o primeiro disponível
+  const orgao = orgaoFromType || 
+    (selectedOrgaoId && orgaos ? orgaos.find((o) => o.id === selectedOrgaoId) : null) ||
+    (orgaos && orgaos.length > 0 ? orgaos[0] : null);
+  
+  // Determinar o ID do órgão a usar (prioridade: selecionado > do tipo > primeiro disponível)
+  const finalOrgaoId = selectedOrgaoId || orgaoFromType?.id || (orgaos && orgaos.length > 0 ? orgaos[0].id : null);
+  
+  // Buscar próximo número do laudo imediatamente quando o modal abrir
+  const { data: nextLaudoNumber } = trpc.inspectionReports.getNextLaudoNumber.useQuery(
+    {
+      orgaoId: finalOrgaoId || 0,
+      tenantId: user?.tenantId,
+    },
+    {
+      enabled: !!finalOrgaoId && !!orgaos,
+    }
+  );
+
+  // Gerar número do laudo automaticamente assim que o modal abrir
+  useEffect(() => {
+    if (nextLaudoNumber) {
+      setForm((prev) => ({ ...prev, numeroLaudo: nextLaudoNumber }));
+    }
+  }, [nextLaudoNumber]);
+
+  // Atualizar número quando o órgão mudar
+  useEffect(() => {
+    if (selectedOrgaoId && orgaos) {
+      // Forçar refetch do número do laudo quando o órgão mudar
+      utils.inspectionReports.getNextLaudoNumber.invalidate({
+        orgaoId: selectedOrgaoId,
+        tenantId: user?.tenantId,
+      });
+    }
+  }, [selectedOrgaoId, orgaos, utils, user?.tenantId]);
   
   // Se não encontrou órgão automático e não há seleção, inicializar com o primeiro disponível
   if (!orgao && orgaos && orgaos.length > 0 && !selectedOrgaoId) {
@@ -1368,12 +1537,28 @@ function GenerateLaudoDialogContent({
 
   const handlePhotoChange = (tipo: string, file: File | null) => {
     if (file) {
+      // Validar se é uma imagem
+      if (!file.type.startsWith('image/')) {
+        toast.error(`O arquivo selecionado não é uma imagem válida para ${tipo}`);
+        return;
+      }
+      
+      // Validar tamanho (máximo 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`A imagem ${tipo} é muito grande. Tamanho máximo: 10MB`);
+        return;
+      }
+      
       const reader = new FileReader();
+      reader.onerror = () => {
+        toast.error(`Erro ao ler a imagem ${tipo}`);
+      };
       reader.onload = (e) => {
         setPhotos((prev) => ({
           ...prev,
           [tipo]: { file, preview: e.target?.result as string },
         }));
+        toast.success(`Foto ${tipo} carregada com sucesso!`);
       };
       reader.readAsDataURL(file);
     } else {
@@ -1404,15 +1589,38 @@ function GenerateLaudoDialogContent({
       return;
     }
 
+    if (!form.inspetorId) {
+      toast.error("É necessário selecionar um Inspetor Técnico.");
+      return;
+    }
+
+    if (!form.responsavelId) {
+      toast.error("É necessário selecionar um Responsável Técnico.");
+      return;
+    }
+
     try {
+      // Buscar dados dos técnicos selecionados
+      const inspetor = filteredInspetores.find((t) => t.id === form.inspetorId);
+      const responsavel = filteredResponsaveis.find((t) => t.id === form.responsavelId);
+
+      if (!inspetor) {
+        toast.error("Inspetor Técnico selecionado não encontrado.");
+        return;
+      }
+      if (!responsavel) {
+        toast.error("Responsável Técnico selecionado não encontrado.");
+        return;
+      }
+
       // 1. Criar o laudo
       const report = await createReportMutation.mutateAsync({
         appointmentId,
         orgaoId: orgao.id,
         numeroLaudo: form.numeroLaudo || undefined,
-        responsavelTecnico: form.responsavelTecnico || undefined,
-        cft: form.cft || undefined,
-        crea: form.crea || undefined,
+        responsavelTecnico: responsavel.nomeCompleto,
+        cft: inspetor.cft || undefined,
+        crea: responsavel.crea || undefined,
         dataValidade: form.dataValidade && form.dataValidade.trim() !== "" ? new Date(form.dataValidade) : undefined,
       });
 
@@ -1420,11 +1628,11 @@ function GenerateLaudoDialogContent({
       const photosData = Object.entries(photos).map(([tipo, data]) => {
         if (!data.file) throw new Error(`Foto ${tipo} não encontrada`);
         const reader = new FileReader();
-        return new Promise<{ tipo: string; fileData: string; fileName: string }>((resolve, reject) => {
+        return new Promise<{ tipo: "traseira" | "dianteira"; fileData: string; fileName: string }>((resolve, reject) => {
           reader.onload = (e) => {
             const base64 = (e.target?.result as string).split(",")[1];
             resolve({
-              tipo: tipo as "traseira" | "dianteira" | "placa" | "panoramica",
+              tipo: tipo as "traseira" | "dianteira",
               fileData: base64,
               fileName: data.file!.name,
             });
@@ -1462,36 +1670,79 @@ function GenerateLaudoDialogContent({
           <Input
             id="numeroLaudo"
             value={form.numeroLaudo}
-            onChange={(e) => setForm((prev) => ({ ...prev, numeroLaudo: e.target.value }))}
-            placeholder="Ex: 001/2024"
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            placeholder="Gerando automaticamente..."
           />
+          {!form.numeroLaudo && orgao && (
+            <p className="text-xs text-muted-foreground">Aguardando geração do número...</p>
+          )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="responsavelTecnico">Responsável Técnico</Label>
-          <Input
-            id="responsavelTecnico"
-            value={form.responsavelTecnico}
-            onChange={(e) => setForm((prev) => ({ ...prev, responsavelTecnico: e.target.value }))}
-            placeholder="Nome do responsável"
-          />
+        <div className="space-y-2 col-span-2">
+          <Label htmlFor="inspetorId">Inspetor Técnico *</Label>
+          <Select
+            value={form.inspetorId?.toString() || ""}
+            onValueChange={(value) => {
+              const inspetorId = value ? parseInt(value) : null;
+              setForm((prev) => ({ ...prev, inspetorId }));
+            }}
+          >
+            <SelectTrigger id="inspetorId">
+              <SelectValue placeholder="Selecione o Inspetor Técnico" />
+            </SelectTrigger>
+            <SelectContent>
+              {filteredInspetores.map((tecnico) => (
+                <SelectItem key={tecnico.id} value={tecnico.id.toString()}>
+                  {tecnico.nomeCompleto} - CPF: {tecnico.cpf} {tecnico.cft ? `- CFT: ${tecnico.cft}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {form.inspetorId && (
+            <div className="text-xs text-muted-foreground mt-1">
+              {(() => {
+                const tecnico = filteredInspetores.find((t) => t.id === form.inspetorId);
+                return tecnico ? (
+                  <>
+                    <strong>Nome:</strong> {tecnico.nomeCompleto} | <strong>CFT:</strong> {tecnico.cft || "N/A"}
+                  </>
+                ) : null;
+              })()}
+            </div>
+          )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="cft">CFT</Label>
-          <Input
-            id="cft"
-            value={form.cft}
-            onChange={(e) => setForm((prev) => ({ ...prev, cft: e.target.value }))}
-            placeholder="Número do CFT"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="crea">CREA</Label>
-          <Input
-            id="crea"
-            value={form.crea}
-            onChange={(e) => setForm((prev) => ({ ...prev, crea: e.target.value }))}
-            placeholder="Número do CREA"
-          />
+        <div className="space-y-2 col-span-2">
+          <Label htmlFor="responsavelId">Responsável Técnico *</Label>
+          <Select
+            value={form.responsavelId?.toString() || ""}
+            onValueChange={(value) => {
+              const responsavelId = value ? parseInt(value) : null;
+              setForm((prev) => ({ ...prev, responsavelId }));
+            }}
+          >
+            <SelectTrigger id="responsavelId">
+              <SelectValue placeholder="Selecione o Responsável Técnico" />
+            </SelectTrigger>
+            <SelectContent>
+              {filteredResponsaveis.map((tecnico) => (
+                <SelectItem key={tecnico.id} value={tecnico.id.toString()}>
+                  {tecnico.nomeCompleto} - CPF: {tecnico.cpf} {tecnico.crea ? `- CREA: ${tecnico.crea}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {form.responsavelId && (
+            <div className="text-xs text-muted-foreground mt-1">
+              {(() => {
+                const tecnico = filteredResponsaveis.find((t) => t.id === form.responsavelId);
+                return tecnico ? (
+                  <>
+                    <strong>Nome:</strong> {tecnico.nomeCompleto} | <strong>CREA:</strong> {tecnico.crea || "N/A"}
+                  </>
+                ) : null;
+              })()}
+            </div>
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="dataValidade">Data de Validade</Label>
@@ -1506,8 +1757,13 @@ function GenerateLaudoDialogContent({
           <div className="space-y-2 col-span-2">
             <Label htmlFor="orgao">Órgão *</Label>
             <Select
-              value={selectedOrgaoId?.toString() || ""}
-              onValueChange={(value) => setSelectedOrgaoId(value ? parseInt(value) : null)}
+              value={selectedOrgaoId?.toString() || (orgaos[0]?.id.toString() || "")}
+              onValueChange={(value) => {
+                const newOrgaoId = value ? parseInt(value) : null;
+                setSelectedOrgaoId(newOrgaoId);
+                // Limpar número do laudo para forçar regeneração
+                setForm((prev) => ({ ...prev, numeroLaudo: "" }));
+              }}
             >
               <SelectTrigger id="orgao">
                 <SelectValue placeholder="Selecione o órgão" />
@@ -1537,10 +1793,10 @@ function GenerateLaudoDialogContent({
       <div>
         <Label className="text-base font-semibold mb-4 block">Fotos Obrigatórias</Label>
         <div className="grid grid-cols-2 gap-4">
-          {(["traseira", "dianteira", "placa", "panoramica"] as const).map((tipo) => (
+          {(["traseira", "dianteira"] as const).map((tipo) => (
             <div key={tipo} className="space-y-2">
               <Label htmlFor={`photo-${tipo}`} className="capitalize">
-                {tipo === "panoramica" ? "Panorâmica" : tipo.charAt(0).toUpperCase() + tipo.slice(1)}
+                {tipo.charAt(0).toUpperCase() + tipo.slice(1)}
               </Label>
               <div className="border-2 border-dashed rounded-lg p-4">
                 {photos[tipo].preview ? (
@@ -1556,7 +1812,7 @@ function GenerateLaudoDialogContent({
                     </Button>
                   </div>
                 ) : (
-                  <label htmlFor={`photo-${tipo}`} className="cursor-pointer">
+                  <label htmlFor={`photo-${tipo}`} className="cursor-pointer block">
                     <div className="flex flex-col items-center justify-center py-4">
                       <Upload className="h-8 w-8 text-muted-foreground mb-2" />
                       <span className="text-sm text-muted-foreground">Clique para fazer upload</span>
@@ -1568,7 +1824,13 @@ function GenerateLaudoDialogContent({
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) handlePhotoChange(tipo, file);
+                        if (file) {
+                          handlePhotoChange(tipo, file);
+                        }
+                        // Limpar o valor do input para permitir selecionar o mesmo arquivo novamente
+                        if (e.target) {
+                          (e.target as HTMLInputElement).value = '';
+                        }
                       }}
                     />
                   </label>

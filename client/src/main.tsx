@@ -30,7 +30,7 @@ const getApiUrl = () => {
     return apiUrl;
   }
   // Em desenvolvimento, usar proxy do Vite (configurado em vite.config.ts)
-  // O proxy redireciona /api para http://localhost:5006
+  // O proxy redireciona /api para http://localhost:5008
   const apiUrl = "/api/trpc";
   console.log("[tRPC Client] Usando URL de desenvolvimento:", apiUrl);
   return apiUrl;

@@ -1,7 +1,8 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-const STORAGE_BASE_PATH = process.env.STORAGE_PATH || "/var/www/inspecionasp/storage";
+// Usar caminho relativo ao projeto se STORAGE_PATH não estiver definido
+const STORAGE_BASE_PATH = process.env.STORAGE_PATH || path.join(process.cwd(), "storage");
 const REPORTS_PATH = path.join(STORAGE_BASE_PATH, "reports");
 
 /**
@@ -20,7 +21,7 @@ async function ensureDirectory(dirPath: string) {
  */
 export async function saveReportPhoto(
   reportId: number,
-  tipo: "traseira" | "dianteira" | "placa" | "panoramica",
+  tipo: "traseira" | "dianteira",
   fileData: string, // Base64
   fileName: string
 ): Promise<string> {
@@ -69,7 +70,9 @@ export async function saveReportPdf(reportId: number, pdfBuffer: Buffer, numeroC
   const reportDir = path.join(REPORTS_PATH, reportId.toString(), "pdf");
   await ensureDirectory(reportDir);
 
-  const fileName = `laudo-${numeroCertificado}.pdf`;
+  // Substituir barras e outros caracteres inválidos por hífen no nome do arquivo
+  const safeFileName = numeroCertificado.replace(/\//g, "-").replace(/\\/g, "-").replace(/:/g, "-");
+  const fileName = `laudo-${safeFileName}.pdf`;
   const filePath = path.join(reportDir, fileName);
 
   await fs.writeFile(filePath, pdfBuffer);

@@ -40,6 +40,7 @@ import Login from "./pages/Login";
 import OrgaoDashboard from "./pages/orgao/Dashboard";
 import OrgaoReports from "./pages/orgao/Reports";
 import TestIuguTokenizationPage from "./pages/TestIuguTokenization";
+import TecnicosPage from "./pages/tenant/Tecnicos";
 
 function Router() {
   return (
@@ -62,6 +63,7 @@ function Router() {
       <Route path={"/tenant/financial"} component={TenantFinancial} />
       <Route path={"/tenant/financial/:companyId"} component={TenantFinancial} />
       <Route path={"/tenant/users"} component={TenantUsers} />
+      <Route path={"/tenant/tecnicos"} component={TecnicosPage} />
       <Route path={"/tenant/reports"} component={TenantReports} />
       <Route path={"/tenant/settings"} component={TenantSettings} />
 

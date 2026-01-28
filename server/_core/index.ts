@@ -151,9 +151,25 @@ async function startServer() {
       const fs = await import("fs");
       const path = await import("path");
       
-      const storagePath = process.env.STORAGE_PATH || "/var/www/inspecionasp/storage";
-      const requestedPath = req.path.replace("/api/storage", "");
+      // Usar caminho relativo ao projeto se STORAGE_PATH não estiver definido
+      const storagePath = process.env.STORAGE_PATH || path.join(process.cwd(), "storage");
+      let requestedPath = req.path.replace("/api/storage", "");
+      // Remover barra inicial se existir
+      if (requestedPath.startsWith("/")) {
+        requestedPath = requestedPath.substring(1);
+      }
       const filePath = path.join(storagePath, requestedPath);
+      
+      // Log para debug (pode remover depois)
+      if (process.env.NODE_ENV === "development") {
+        console.log("[Storage] Requisição:", {
+          originalPath: req.path,
+          requestedPath,
+          storagePath,
+          filePath,
+          exists: fs.existsSync(filePath)
+        });
+      }
       
       // Verificar se o arquivo existe
       if (!fs.existsSync(filePath)) {
@@ -170,10 +186,21 @@ async function startServer() {
         ".png": "image/png",
       };
       
-      res.setHeader("Content-Type", contentTypes[ext] || "application/octet-stream");
+      const contentType = contentTypes[ext] || "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
       res.setHeader("Content-Disposition", `inline; filename="${path.basename(filePath)}"`);
       
+      // Adicionar headers CORS se necessário
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET");
+      
       const fileStream = fs.createReadStream(filePath);
+      fileStream.on("error", (error) => {
+        console.error("[Storage] Erro ao ler arquivo:", error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Erro ao ler arquivo" });
+        }
+      });
       fileStream.pipe(res);
     } catch (error: any) {
       console.error("[Storage] Erro ao servir arquivo:", error);

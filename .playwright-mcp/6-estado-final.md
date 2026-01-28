@@ -1,0 +1,34 @@
+### Page state
+- Page URL: http://localhost:5005/
+- Page Title: Sistema de Inspeção ITL
+- Page Snapshot:
+```yaml
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - img "Sistema de Inspeção ITL" [ref=e8]
+      - heading "Sistema de Inspeção ITL" [level=1] [ref=e9]:
+        - img [ref=e10]
+        - text: Sistema de Inspeção ITL
+      - paragraph [ref=e12]: Sistema de Inspeção Técnica
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - img [ref=e16]
+          - text: E-mail
+        - textbox "E-mail" [ref=e19]:
+          - /placeholder: seu@email.com
+          - text: operador@itl.com.br
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - img [ref=e22]
+          - text: Senha
+        - textbox "Senha" [ref=e25]:
+          - /placeholder: ••••••••
+          - text: Operador123!
+      - button "Entrar" [ref=e26] [cursor=pointer]:
+        - img
+        - text: Entrar
+    - paragraph [ref=e28]: Acesso restrito a administradores e operadores
+```
