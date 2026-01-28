@@ -12,6 +12,26 @@ import { Wrench, Edit, Search, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+// Função para formatar CPF
+const formatCPF = (value: string): string => {
+  // Remove tudo que não é número
+  const numbers = value.replace(/\D/g, "");
+  
+  // Limita a 11 dígitos
+  const limitedNumbers = numbers.slice(0, 11);
+  
+  // Aplica a máscara
+  if (limitedNumbers.length <= 3) {
+    return limitedNumbers;
+  } else if (limitedNumbers.length <= 6) {
+    return `${limitedNumbers.slice(0, 3)}.${limitedNumbers.slice(3)}`;
+  } else if (limitedNumbers.length <= 9) {
+    return `${limitedNumbers.slice(0, 3)}.${limitedNumbers.slice(3, 6)}.${limitedNumbers.slice(6)}`;
+  } else {
+    return `${limitedNumbers.slice(0, 3)}.${limitedNumbers.slice(3, 6)}.${limitedNumbers.slice(6, 9)}-${limitedNumbers.slice(9, 11)}`;
+  }
+};
+
 export default function TecnicosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTecnico, setEditingTecnico] = useState<number | null>(null);
@@ -413,10 +433,15 @@ export default function TecnicosPage() {
                       <Input
                         id="cpf"
                         value={formData.cpf}
-                        onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                        onChange={(e) => {
+                          const formatted = formatCPF(e.target.value);
+                          setFormData({ ...formData, cpf: formatted });
+                        }}
                         placeholder="000.000.000-00"
+                        maxLength={14}
                         required
                       />
+                      <p className="text-xs text-muted-foreground">11 dígitos (somente números)</p>
                     </div>
                     {formData.tipo === "inspetor" ? (
                       <div className="space-y-2">
